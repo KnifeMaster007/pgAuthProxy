@@ -2,12 +2,13 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"github.com/jackc/pgproto3/v2"
 	"math/rand"
 	"net"
 )
 
-type AuthMapper = func(props map[string]string, password string, salt [4]byte) (map[string]string, string, error)
+type AuthMapper = func(props map[string]string, password string, salt [4]byte) (map[string]string, error)
 
 var authError = errors.New("client_auth_failed")
 
@@ -16,14 +17,15 @@ var pgErrorAuthFailed = &pgproto3.ErrorResponse{
 }
 
 type ProxyFront struct {
-	salt        [4]byte
-	conn        net.Conn
-	proto       *pgproto3.Backend
-	logger      *CustomLoggerHolder
-	authMapper  AuthMapper
-	originProps map[string]string
-	mappedProps map[string]string
-	mappedPass  string
+	salt             [4]byte
+	conn             net.Conn
+	proto            *pgproto3.Backend
+	protoChunkReader pgproto3.ChunkReader
+	logger           *CustomLoggerHolder
+	authMapper       AuthMapper
+	originProps      map[string]string
+	mappedProps      map[string]string
+	backend          *ProxyBack
 }
 
 func (f *ProxyFront) generateSalt() {
@@ -33,29 +35,41 @@ func (f *ProxyFront) generateSalt() {
 }
 
 func NewProxyFront(conn net.Conn, authMapper AuthMapper) *ProxyFront {
+	cr := pgproto3.NewChunkReader(conn)
 	return &ProxyFront{
-		salt:       [4]byte{},
-		conn:       conn,
-		proto:      pgproto3.NewBackend(pgproto3.NewChunkReader(conn), conn),
-		logger:     NewLoggerHolder(map[string]interface{}{"remote_address": conn.RemoteAddr().String()}),
-		authMapper: authMapper,
+		salt:             [4]byte{},
+		conn:             conn,
+		proto:            pgproto3.NewBackend(cr, conn),
+		protoChunkReader: cr,
+		logger:           NewLoggerHolder(map[string]interface{}{"remote_address": conn.RemoteAddr().String()}),
+		authMapper:       authMapper,
 	}
 }
 
 func (f *ProxyFront) handlePasswordAuth(msg *pgproto3.PasswordMessage) error {
-	props, mappedPass, err := f.authMapper(f.originProps, msg.Password, f.salt)
-	f.mappedProps = props
-	f.mappedPass = mappedPass
-
+	props, err := f.authMapper(f.originProps, msg.Password, f.salt)
 	if err != nil {
 		_ = f.proto.Send(pgErrorAuthFailed)
 		return authError
 	}
+	f.mappedProps = props
+	f.backend, err = NewProxyBackend(f.mappedProps, f.originProps)
+	if err != nil {
+		f.logger.get().Error("Failed to bootstrap backend connection")
+	}
+	f.logger.setProperty("targetDsn", fmt.Sprintf(
+		"postgres://%s@%s:%s/%s",
+		f.backend.TargetProps["user"],
+		f.backend.TargetHost,
+		f.backend.TargetPort,
+		f.backend.TargetProps["database"],
+	))
+	f.logger.get().Debug("Bootstrapped backend connection")
 	err = f.proto.Send(&pgproto3.AuthenticationOk{})
 	if err != nil {
 		return err
 	}
-	return f.proto.Send(&pgproto3.ReadyForQuery{TxStatus: 'I'})
+	return nil
 }
 
 func (f *ProxyFront) handleStartup() (map[string]string, error) {
@@ -91,6 +105,12 @@ func (f *ProxyFront) handleStartup() (map[string]string, error) {
 	}
 }
 
+func (f ProxyFront) Close() {
+	if f.backend != nil {
+		f.backend.Close()
+	}
+}
+
 func (f *ProxyFront) Run() {
 	f.logger.get().Debug("Client connected")
 	defer f.logger.get().Debug("Connection closed")
@@ -113,10 +133,12 @@ func (f *ProxyFront) Run() {
 				return
 			}
 			f.logger.get().Debug("Authentication successful")
-			//break
+			goto serve
 		default:
 			f.logger.get().Error("Unknown message type")
 			return
 		}
 	}
+serve:
+	err = f.backend.Run(f.conn, f.protoChunkReader)
 }

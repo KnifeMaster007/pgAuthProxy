@@ -7,11 +7,7 @@ import (
 
 const (
 	// TODO: remove hardcode
-	BindAddress    = ":5432"
-	TargetHost     = "pgbouncer01.d.m4"
-	TargetPort     = "5432"
-	TargetUser     = "igalkin"
-	TargetPassword = "SnwUD5pS9Z4N"
+	BindAddress = ":15432"
 )
 
 func main() {
@@ -32,6 +28,7 @@ func main() {
 			go func() {
 				defer conn.Close()
 				front := NewProxyFront(conn, authStub)
+				defer front.Close()
 				front.Run()
 			}()
 		}

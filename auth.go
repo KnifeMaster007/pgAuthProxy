@@ -11,21 +11,27 @@ func createMd5Credential(user string, password string) string {
 	return "md5" + hex.EncodeToString(credHash[:])
 }
 
-func saltedMd5Credential(user string, password string, salt [4]byte) string {
-	credHash := createMd5Credential(user, password)[3:]
-	saltedCredHash := md5.Sum(append([]byte(credHash), salt[:]...))
+func saltedMd5Credential(cred string, salt [4]byte) string {
+	saltedCredHash := md5.Sum(append([]byte(cred[3:]), salt[:]...))
 	return "md5" + hex.EncodeToString(saltedCredHash[:])
 }
 
-func authStub(props map[string]string, password string, salt [4]byte) (map[string]string, string, error) {
+func saltedMd5PasswordCredential(user string, password string, salt [4]byte) string {
+	return saltedMd5Credential(createMd5Credential(user, password), salt)
+}
+
+func authStub(props map[string]string, password string, salt [4]byte) (map[string]string, error) {
 	const username = "testuser"
 	const pass = "password"
-	const mappedUser = "postgres"
-	const mappedPassword = "postgres"
-	const mappedDatabase = "postgres"
+	const mappedUser = "igalkin"
+	const mappedPassword = "SnwUD5pS9Z4N"
+	const mappedDatabase = "m4"
+	const targetHost = "pgbouncer01.d.m4"
+	const targetPort = "5432"
+	var mappedCred = createMd5Credential(mappedUser, mappedPassword)
 	if props["user"] == username {
-		if password != saltedMd5Credential(username, pass, salt) {
-			return nil, "", io.EOF
+		if password != saltedMd5PasswordCredential(username, pass, salt) {
+			return nil, io.EOF
 		}
 
 		mappedProps := make(map[string]string)
@@ -34,7 +40,10 @@ func authStub(props map[string]string, password string, salt [4]byte) (map[strin
 		}
 		mappedProps["user"] = mappedUser
 		mappedProps["database"] = mappedDatabase
-		return mappedProps, mappedPassword, nil
+		mappedProps[TargetHostParameter] = targetHost
+		mappedProps[TargetPortParameter] = targetPort
+		mappedProps[TargetCredentialParameter] = mappedCred
+		return mappedProps, nil
 	}
-	return nil, mappedPassword, io.EOF
+	return nil, io.EOF
 }

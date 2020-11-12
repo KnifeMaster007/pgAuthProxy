@@ -1,0 +1,140 @@
+package main
+
+import (
+	"encoding/binary"
+	"errors"
+	"github.com/jackc/pgproto3/v2"
+	log "github.com/sirupsen/logrus"
+	"io"
+	"net"
+	"strings"
+)
+
+const (
+	MetaPrefix                = "_META_"
+	TargetCredentialParameter = MetaPrefix + "TARGET_CRED"
+	TargetHostParameter       = MetaPrefix + "TARGET_HOST"
+	TargetPortParameter       = MetaPrefix + "TARGET_PORT"
+)
+
+type ProxyBack struct {
+	TargetProps map[string]string
+	TargetHost  string
+	TargetPort  string
+
+	originProps      map[string]string
+	backendConn      net.Conn
+	proto            *pgproto3.Frontend
+	protoChunkReader pgproto3.ChunkReader
+}
+
+var MissingRequiredTargetFields = errors.New("required target fields missing in target props")
+var BackendAuthenticationError = errors.New("backend authentication failed")
+var BackendInvalidMessage = errors.New("unexpected message received from backend")
+
+func NewProxyBackend(targetProps map[string]string, originProps map[string]string) (*ProxyBack, error) {
+	b := &ProxyBack{
+		originProps: originProps,
+		TargetProps: make(map[string]string),
+	}
+	if host, ok := targetProps[TargetHostParameter]; ok {
+		b.TargetHost = host
+	} else {
+		return nil, MissingRequiredTargetFields
+	}
+	if port, ok := targetProps[TargetPortParameter]; ok {
+		b.TargetPort = port
+	} else {
+		return nil, MissingRequiredTargetFields
+	}
+	for k, v := range targetProps {
+		if !strings.HasPrefix(k, MetaPrefix) {
+			b.TargetProps[k] = v
+		}
+	}
+	err := b.initiateBackendConnection(targetProps[TargetCredentialParameter])
+	if err != nil {
+		return nil, err
+	}
+	return b, nil
+}
+
+func (b *ProxyBack) initiateBackendConnection(credential string) error {
+	conn, err := net.Dial("tcp", b.TargetHost+":"+b.TargetPort)
+	if err != nil {
+		return err
+	}
+	b.backendConn = conn
+	b.protoChunkReader = pgproto3.NewChunkReader(conn)
+	b.proto = pgproto3.NewFrontend(b.protoChunkReader, conn)
+	err = b.proto.Send(&pgproto3.StartupMessage{
+		ProtocolVersion: pgproto3.ProtocolVersionNumber,
+		Parameters:      b.TargetProps,
+	})
+	if err != nil {
+		conn.Close()
+		return err
+	}
+	for {
+		msg, err := b.proto.Receive()
+		if err != nil {
+			conn.Close()
+			return err
+		}
+		switch msg.(type) {
+		case *pgproto3.AuthenticationMD5Password:
+			salt := msg.(*pgproto3.AuthenticationMD5Password).Salt
+			err = b.proto.Send(&pgproto3.PasswordMessage{Password: saltedMd5Credential(credential, salt)})
+			if err != nil {
+				conn.Close()
+				return err
+			}
+			continue
+		case *pgproto3.AuthenticationOk:
+			return nil
+		case *pgproto3.ErrorResponse:
+			return BackendAuthenticationError
+		default:
+			conn.Close()
+			return BackendInvalidMessage
+		}
+	}
+}
+
+func pipePgMessages(source pgproto3.ChunkReader, dest io.Writer) error {
+	for {
+		header, err := source.Next(5)
+		if err != nil {
+			return err
+		}
+		l := int(binary.BigEndian.Uint32(header[1:])) - 4
+		body, err := source.Next(l)
+		_, err = dest.Write(append(header, body...))
+		if err != nil {
+			return err
+		}
+	}
+}
+
+func (b *ProxyBack) Run(frontConn net.Conn, frontChunkReader pgproto3.ChunkReader) error {
+	defer b.Close()
+	err := make(chan error)
+	go func() {
+		log.Debug("bootstrapped backend -> frontend message pipe")
+		err <- pipePgMessages(b.protoChunkReader, frontConn)
+	}()
+	go func() {
+		log.Debug("bootstrapped backend <- frontend message pipe")
+		err <- pipePgMessages(frontChunkReader, b.backendConn)
+	}()
+	select {
+	case e := <-err:
+		return e
+	}
+}
+
+func (b *ProxyBack) Close() {
+	if b.backendConn != nil {
+		b.backendConn.Close()
+	}
+}
