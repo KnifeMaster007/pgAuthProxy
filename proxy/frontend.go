@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"github.com/jackc/pgproto3/v2"
+	"github.com/spf13/viper"
+	"io"
 	"math/rand"
 	"net"
 	"pgAuthProxy/utils"
@@ -86,11 +88,18 @@ func (f *ProxyFront) handleStartup() (map[string]string, error) {
 		f.logger.SetProperty("origin_database", f.originProps["database"])
 		f.logger.SetProperty("origin_user", f.originProps["user"])
 		f.logger.SetProperty("client_app", f.originProps["application_name"])
-		f.generateSalt()
-		err := f.proto.Send(&pgproto3.AuthenticationMD5Password{Salt: f.salt})
-		if err != nil {
-			f.logger.Get().Error("Failed to send md5 password authentication request")
-			return nil, err
+		if !viper.GetBool(utils.ConfigCleartextPassword) {
+			f.generateSalt()
+			err := f.proto.Send(&pgproto3.AuthenticationMD5Password{Salt: f.salt})
+			if err != nil && err != io.EOF {
+				f.logger.Get().WithError(err).Error("Failed to send md5 password authentication request")
+				return nil, err
+			}
+		} else {
+			err := f.proto.Send(&pgproto3.AuthenticationCleartextPassword{})
+			if err != nil && err != io.EOF {
+				f.logger.Get().WithError(err).Error("Failed to send cleartext password authentication request")
+			}
 		}
 		return f.originProps, nil
 	case *pgproto3.SSLRequest:

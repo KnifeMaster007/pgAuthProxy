@@ -1,6 +1,7 @@
 listen: 0.0.0.0:15432
 
 authenticator:
+  cleartext_password: false
   cmd:
     - 'sh'
     - '-c'

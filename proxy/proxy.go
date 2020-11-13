@@ -13,7 +13,7 @@ func Start() {
 	log.Info("Starting auth pgAuthProxy...")
 	log.SetLevel(log.DebugLevel)
 
-	var bindAddr = viper.GetString(utils.FlagListen)
+	var bindAddr = viper.GetString(utils.ConfigListenFlag)
 	server, _ := net.Listen("tcp", bindAddr)
 	log.WithField("address", bindAddr).Info("Started listening")
 	defer server.Close()

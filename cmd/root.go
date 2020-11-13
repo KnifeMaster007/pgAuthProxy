@@ -22,17 +22,27 @@ var (
 		Short: "PostgreSQL authentication proxy",
 		Run: func(cmd *cobra.Command, args []string) {
 			initConfig()
+			a := viper.GetString(utils.ConfigCleartextPassword)
+			if a != "" {
+			}
 			proxy.Start()
 		},
 	}
 )
 
 func initCobra() {
-	rootCmd.PersistentFlags().StringVar(&cfgFile, utils.FlagConfigFile, "", "configuration file path")
+	rootCmd.PersistentFlags().StringVar(&cfgFile, utils.ConfigFileFlag, "", "configuration file path")
 
-	rootCmd.PersistentFlags().StringVar(&listen, utils.FlagListen, ":5432", "bind address")
-	_ = viper.BindPFlag(utils.FlagListen, rootCmd.PersistentFlags().Lookup(utils.FlagListen))
-	viper.SetDefault(utils.FlagListen, defaultListen)
+	rootCmd.PersistentFlags().StringVar(&listen, utils.ConfigListenFlag, ":5432", "bind address")
+	_ = viper.BindPFlag(utils.ConfigListenFlag, rootCmd.PersistentFlags().Lookup(utils.ConfigListenFlag))
+	viper.SetDefault(utils.ConfigListenFlag, defaultListen)
+
+	rootCmd.PersistentFlags().Bool(utils.ConfigCleartextPasswordFlag, false,
+		"use cleartext password instead of MD5-hashed")
+	_ = viper.BindPFlag(utils.ConfigCleartextPassword,
+		rootCmd.PersistentFlags().Lookup(utils.ConfigCleartextPasswordFlag))
+	_ = viper.BindEnv(utils.ConfigCleartextPassword, utils.ConfigCleartextPasswordEnv)
+	viper.SetDefault(utils.ConfigCleartextPasswordFlag, false)
 }
 
 func initConfig() {
@@ -61,7 +71,7 @@ func initConfig() {
 	} else {
 		log.WithField(utils.PropConfigFile, viper.ConfigFileUsed()).Info("Using config")
 	}
-	viper.SetEnvPrefix("pgproxy")
+	viper.SetEnvPrefix(utils.ConfigEnvPrefix)
 	viper.AutomaticEnv()
 }
 
