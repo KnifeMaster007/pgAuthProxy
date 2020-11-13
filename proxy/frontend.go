@@ -1,4 +1,4 @@
-package main
+package proxy
 
 import (
 	"errors"
@@ -6,6 +6,7 @@ import (
 	"github.com/jackc/pgproto3/v2"
 	"math/rand"
 	"net"
+	"pgAuthProxy/utils"
 )
 
 type AuthMapper = func(props map[string]string, password string, salt [4]byte) (map[string]string, error)
@@ -21,7 +22,7 @@ type ProxyFront struct {
 	conn             net.Conn
 	proto            *pgproto3.Backend
 	protoChunkReader pgproto3.ChunkReader
-	logger           *CustomLoggerHolder
+	logger           *utils.CustomLoggerHolder
 	authMapper       AuthMapper
 	originProps      map[string]string
 	mappedProps      map[string]string
@@ -41,7 +42,7 @@ func NewProxyFront(conn net.Conn, authMapper AuthMapper) *ProxyFront {
 		conn:             conn,
 		proto:            pgproto3.NewBackend(cr, conn),
 		protoChunkReader: cr,
-		logger:           NewLoggerHolder(map[string]interface{}{"remote_address": conn.RemoteAddr().String()}),
+		logger:           utils.NewLoggerHolder(map[string]interface{}{"remote_address": conn.RemoteAddr().String()}),
 		authMapper:       authMapper,
 	}
 }
@@ -55,16 +56,16 @@ func (f *ProxyFront) handlePasswordAuth(msg *pgproto3.PasswordMessage) error {
 	f.mappedProps = props
 	f.backend, err = NewProxyBackend(f.mappedProps, f.originProps)
 	if err != nil {
-		f.logger.get().Error("Failed to bootstrap backend connection")
+		f.logger.Get().Error("Failed to bootstrap backend connection")
 	}
-	f.logger.setProperty("targetDsn", fmt.Sprintf(
+	f.logger.SetProperty("targetDsn", fmt.Sprintf(
 		"postgres://%s@%s:%s/%s",
 		f.backend.TargetProps["user"],
 		f.backend.TargetHost,
 		f.backend.TargetPort,
 		f.backend.TargetProps["database"],
 	))
-	f.logger.get().Debug("Bootstrapped backend connection")
+	f.logger.Get().Debug("Bootstrapped backend connection")
 	err = f.proto.Send(&pgproto3.AuthenticationOk{})
 	if err != nil {
 		return err
@@ -75,32 +76,32 @@ func (f *ProxyFront) handlePasswordAuth(msg *pgproto3.PasswordMessage) error {
 func (f *ProxyFront) handleStartup() (map[string]string, error) {
 	startupMessage, err := f.proto.ReceiveStartupMessage()
 	if err != nil {
-		f.logger.get().Warn("Failed to receive startup message")
+		f.logger.Get().Warn("Failed to receive startup message")
 		return nil, err
 	}
 	switch startupMessage.(type) {
 	case *pgproto3.StartupMessage:
 		msg := startupMessage.(*pgproto3.StartupMessage)
 		f.originProps = msg.Parameters
-		f.logger.setProperty("origin_database", f.originProps["database"])
-		f.logger.setProperty("origin_user", f.originProps["user"])
-		f.logger.setProperty("client_app", f.originProps["application_name"])
+		f.logger.SetProperty("origin_database", f.originProps["database"])
+		f.logger.SetProperty("origin_user", f.originProps["user"])
+		f.logger.SetProperty("client_app", f.originProps["application_name"])
 		f.generateSalt()
 		err := f.proto.Send(&pgproto3.AuthenticationMD5Password{Salt: f.salt})
 		if err != nil {
-			f.logger.get().Error("Failed to send md5 password authentication request")
+			f.logger.Get().Error("Failed to send md5 password authentication request")
 			return nil, err
 		}
 		return f.originProps, nil
 	case *pgproto3.SSLRequest:
 		_, err = f.conn.Write([]byte("N"))
 		if err != nil {
-			f.logger.get().Error("Failed to send deny SSL")
+			f.logger.Get().Error("Failed to send deny SSL")
 			return nil, err
 		}
 		return f.handleStartup()
 	default:
-		f.logger.get().Error("Failed to decode startup message")
+		f.logger.Get().Error("Failed to decode startup message")
 		return nil, net.UnknownNetworkError("Failed to decode startup message")
 	}
 }
@@ -112,30 +113,30 @@ func (f ProxyFront) Close() {
 }
 
 func (f *ProxyFront) Run() {
-	f.logger.get().Debug("Client connected")
-	defer f.logger.get().Debug("Connection closed")
+	f.logger.Get().Debug("Client connected")
+	defer f.logger.Get().Debug("Connection closed")
 	_, err := f.handleStartup()
 	if err != nil {
-		f.logger.get().WithError(err).Warn("Client connection init error")
+		f.logger.Get().WithError(err).Warn("Client connection init error")
 	}
-	f.logger.get().Info("Client startup sequence complete")
+	f.logger.Get().Info("Client startup sequence complete")
 	for {
 		msg, err := f.proto.Receive()
 		if err != nil {
-			f.logger.get().Warn("Error reading message")
+			f.logger.Get().Warn("Error reading message")
 			return
 		}
 		switch msg.(type) {
 		case *pgproto3.PasswordMessage:
 			err := f.handlePasswordAuth(msg.(*pgproto3.PasswordMessage))
 			if err != nil {
-				f.logger.get().WithError(err).Error("Failed to authenticate")
+				f.logger.Get().WithError(err).Error("Failed to authenticate")
 				return
 			}
-			f.logger.get().Debug("Authentication successful")
+			f.logger.Get().Debug("Authentication successful")
 			goto serve
 		default:
-			f.logger.get().Error("Unknown message type")
+			f.logger.Get().Error("Unknown message type")
 			return
 		}
 	}

@@ -1,4 +1,4 @@
-package main
+package utils
 
 import log "github.com/sirupsen/logrus"
 
@@ -10,10 +10,10 @@ func NewLoggerHolder(props map[string]interface{}) *CustomLoggerHolder {
 	return &CustomLoggerHolder{loggerProperties: props}
 }
 
-func (lh *CustomLoggerHolder) setProperty(key string, value string) {
+func (lh *CustomLoggerHolder) SetProperty(key string, value string) {
 	lh.loggerProperties[key] = value
 }
 
-func (lh *CustomLoggerHolder) get() *log.Entry {
+func (lh *CustomLoggerHolder) Get() *log.Entry {
 	return log.WithFields(lh.loggerProperties)
 }

@@ -1,4 +1,4 @@
-package main
+package proxy
 
 import (
 	"encoding/binary"
@@ -7,14 +7,9 @@ import (
 	log "github.com/sirupsen/logrus"
 	"io"
 	"net"
+	"pgAuthProxy/auth"
+	"pgAuthProxy/utils"
 	"strings"
-)
-
-const (
-	MetaPrefix                = "_META_"
-	TargetCredentialParameter = MetaPrefix + "TARGET_CRED"
-	TargetHostParameter       = MetaPrefix + "TARGET_HOST"
-	TargetPortParameter       = MetaPrefix + "TARGET_PORT"
 )
 
 type ProxyBack struct {
@@ -37,22 +32,22 @@ func NewProxyBackend(targetProps map[string]string, originProps map[string]strin
 		originProps: originProps,
 		TargetProps: make(map[string]string),
 	}
-	if host, ok := targetProps[TargetHostParameter]; ok {
+	if host, ok := targetProps[utils.TargetHostParameter]; ok {
 		b.TargetHost = host
 	} else {
 		return nil, MissingRequiredTargetFields
 	}
-	if port, ok := targetProps[TargetPortParameter]; ok {
+	if port, ok := targetProps[utils.TargetPortParameter]; ok {
 		b.TargetPort = port
 	} else {
 		return nil, MissingRequiredTargetFields
 	}
 	for k, v := range targetProps {
-		if !strings.HasPrefix(k, MetaPrefix) {
+		if !strings.HasPrefix(k, utils.MetaPrefix) {
 			b.TargetProps[k] = v
 		}
 	}
-	err := b.initiateBackendConnection(targetProps[TargetCredentialParameter])
+	err := b.initiateBackendConnection(targetProps[utils.TargetCredentialParameter])
 	if err != nil {
 		return nil, err
 	}
@@ -84,7 +79,7 @@ func (b *ProxyBack) initiateBackendConnection(credential string) error {
 		switch msg.(type) {
 		case *pgproto3.AuthenticationMD5Password:
 			salt := msg.(*pgproto3.AuthenticationMD5Password).Salt
-			err = b.proto.Send(&pgproto3.PasswordMessage{Password: saltedMd5Credential(credential, salt)})
+			err = b.proto.Send(&pgproto3.PasswordMessage{Password: auth.SaltedMd5Credential(credential, salt)})
 			if err != nil {
 				conn.Close()
 				return err
