@@ -29,7 +29,7 @@ func SaltedMd5PasswordCredential(user string, password string, salt [4]byte) str
 func encodeProps(props map[string]string) io.Reader {
 	builder := &bytes.Buffer{}
 	for k, v := range props {
-		builder.WriteString(fmt.Sprintf("%s=%s", k, v))
+		builder.WriteString(fmt.Sprintf("%s=%s\n", k, v))
 	}
 	return builder
 }

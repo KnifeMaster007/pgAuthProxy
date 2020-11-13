@@ -97,7 +97,7 @@ func pipePgMessages(source pgproto3.ChunkReader, dest io.Writer) error {
 			return err
 		}
 		l := int(binary.BigEndian.Uint32(header[1:])) - 4
-		body, err := source.Next(l)
+		body, _ := source.Next(l)
 		_, err = dest.Write(append(header, body...))
 		if err != nil {
 			return err

@@ -8,6 +8,7 @@ import (
 	"pgAuthProxy/utils"
 )
 
+// Start PostgreSQL authentication proxy server
 func Start() {
 	//log.SetReportCaller(true)
 	log.Info("Starting auth pgAuthProxy...")

@@ -150,5 +150,5 @@ func (f *ProxyFront) Run() {
 		}
 	}
 serve:
-	err = f.backend.Run(f.conn, f.protoChunkReader)
+	_ = f.backend.Run(f.conn, f.protoChunkReader)
 }
