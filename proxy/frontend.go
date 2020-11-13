@@ -56,13 +56,13 @@ func (f *ProxyFront) handlePasswordAuth(msg *pgproto3.PasswordMessage) error {
 	f.mappedProps = props
 	f.backend, err = NewProxyBackend(f.mappedProps, f.originProps)
 	if err != nil {
-		f.logger.Get().Error("Failed to bootstrap backend connection")
+		f.logger.Get().WithError(err).Error("Failed to bootstrap backend connection")
+		return err
 	}
 	f.logger.SetProperty("targetDsn", fmt.Sprintf(
-		"postgres://%s@%s:%s/%s",
+		"postgres://%s@%s/%s",
 		f.backend.TargetProps["user"],
 		f.backend.TargetHost,
-		f.backend.TargetPort,
 		f.backend.TargetProps["database"],
 	))
 	f.logger.Get().Debug("Bootstrapped backend connection")

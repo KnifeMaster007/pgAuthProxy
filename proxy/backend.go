@@ -15,7 +15,6 @@ import (
 type ProxyBack struct {
 	TargetProps map[string]string
 	TargetHost  string
-	TargetPort  string
 
 	originProps      map[string]string
 	backendConn      net.Conn
@@ -37,11 +36,6 @@ func NewProxyBackend(targetProps map[string]string, originProps map[string]strin
 	} else {
 		return nil, MissingRequiredTargetFields
 	}
-	if port, ok := targetProps[utils.TargetPortParameter]; ok {
-		b.TargetPort = port
-	} else {
-		return nil, MissingRequiredTargetFields
-	}
 	for k, v := range targetProps {
 		if !strings.HasPrefix(k, utils.MetaPrefix) {
 			b.TargetProps[k] = v
@@ -55,7 +49,7 @@ func NewProxyBackend(targetProps map[string]string, originProps map[string]strin
 }
 
 func (b *ProxyBack) initiateBackendConnection(credential string) error {
-	conn, err := net.Dial("tcp", b.TargetHost+":"+b.TargetPort)
+	conn, err := net.Dial("tcp", b.TargetHost)
 	if err != nil {
 		return err
 	}

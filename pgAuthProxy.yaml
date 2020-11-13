@@ -1,0 +1,13 @@
+listen: 0.0.0.0:15432
+
+authenticator:
+  cmd:
+    - 'sh'
+    - '-c'
+    - |
+      cat << END
+      database=postgres
+      user=postgres
+      _META_TARGET_HOST=127.0.0.1:5432
+      _META_TARGET_CRED=md53175bce1d3201d16594cebf9d7eb3f9d
+      END

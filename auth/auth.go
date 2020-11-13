@@ -1,10 +1,15 @@
 package auth
 
 import (
+	"bytes"
 	"crypto/md5"
 	"encoding/hex"
+	"fmt"
+	gocmd "github.com/go-cmd/cmd"
+	"github.com/spf13/viper"
 	"io"
 	"pgAuthProxy/utils"
+	"strings"
 )
 
 func CreateMd5Credential(user string, password string) string {
@@ -21,30 +26,42 @@ func SaltedMd5PasswordCredential(user string, password string, salt [4]byte) str
 	return SaltedMd5Credential(CreateMd5Credential(user, password), salt)
 }
 
-func AuthStub(props map[string]string, password string, salt [4]byte) (map[string]string, error) {
-	const username = "testuser"
-	const pass = "password"
-	const mappedUser = "igalkin"
-	const mappedPassword = "SnwUD5pS9Z4N"
-	const mappedDatabase = "m4"
-	const targetHost = "pgbouncer01.d.m4"
-	const targetPort = "5432"
-	var mappedCred = CreateMd5Credential(mappedUser, mappedPassword)
-	if props["user"] == username {
-		if password != SaltedMd5PasswordCredential(username, pass, salt) {
+func encodeProps(props map[string]string) io.Reader {
+	builder := &bytes.Buffer{}
+	for k, v := range props {
+		builder.WriteString(fmt.Sprintf("%s=%s", k, v))
+	}
+	return builder
+}
+
+func Exec(props map[string]string, password string, salt [4]byte) (map[string]string, error) {
+	parameters := map[string]string{
+		utils.SourceCredentialParameter: password,
+		utils.SourceSaltParameter:       hex.EncodeToString(salt[:]),
+	}
+	for k, v := range props {
+		parameters[k] = v
+	}
+	args := viper.GetStringSlice("authenticator.cmd")
+	command := gocmd.NewCmd(args[0], args[1:]...)
+	statusChan := command.StartWithStdin(encodeProps(parameters))
+
+	select {
+	case status := <-statusChan:
+		if status.Error != nil {
+			return nil, status.Error
+		}
+		if status.Exit != 0 {
 			return nil, io.EOF
 		}
-
-		mappedProps := make(map[string]string)
-		for k, v := range props {
-			mappedProps[k] = v
+		ret := make(map[string]string)
+		for _, s := range status.Stdout {
+			if split := strings.SplitN(s, "=", 2); len(split) == 2 {
+				if !strings.HasPrefix(split[0], utils.SourceMetaPrefix) {
+					ret[split[0]] = split[1]
+				}
+			}
 		}
-		mappedProps["user"] = mappedUser
-		mappedProps["database"] = mappedDatabase
-		mappedProps[utils.TargetHostParameter] = targetHost
-		mappedProps[utils.TargetPortParameter] = targetPort
-		mappedProps[utils.TargetCredentialParameter] = mappedCred
-		return mappedProps, nil
+		return ret, nil
 	}
-	return nil, io.EOF
 }

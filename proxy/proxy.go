@@ -2,13 +2,10 @@ package proxy
 
 import (
 	log "github.com/sirupsen/logrus"
+	"github.com/spf13/viper"
 	"net"
 	"pgAuthProxy/auth"
-)
-
-const (
-	// TODO: remove hardcode
-	BindAddress = ":15432"
+	"pgAuthProxy/utils"
 )
 
 func Start() {
@@ -16,9 +13,9 @@ func Start() {
 	log.Info("Starting auth pgAuthProxy...")
 	log.SetLevel(log.DebugLevel)
 
-	const BindAddr = BindAddress
-	server, _ := net.Listen("tcp", BindAddr)
-	log.WithField("address", BindAddr).Info("Started listening")
+	var bindAddr = viper.GetString(utils.FlagListen)
+	server, _ := net.Listen("tcp", bindAddr)
+	log.WithField("address", bindAddr).Info("Started listening")
 	defer server.Close()
 
 	for {
@@ -28,7 +25,7 @@ func Start() {
 		} else {
 			go func() {
 				defer conn.Close()
-				front := NewProxyFront(conn, auth.AuthStub)
+				front := NewProxyFront(conn, auth.Exec)
 				defer front.Close()
 				front.Run()
 			}()
