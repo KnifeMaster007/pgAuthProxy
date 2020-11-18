@@ -5,10 +5,10 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"fmt"
+	"github.com/KnifeMaster007/pgAuthProxy/utils"
 	gocmd "github.com/go-cmd/cmd"
 	"github.com/spf13/viper"
 	"io"
-	"pgAuthProxy/utils"
 	"strings"
 )
 

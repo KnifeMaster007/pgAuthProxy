@@ -1,9 +1,9 @@
 package main
 
 import (
+	"github.com/KnifeMaster007/pgAuthProxy/cmd"
 	log "github.com/sirupsen/logrus"
 	"os"
-	"pgAuthProxy/cmd"
 )
 
 func main() {

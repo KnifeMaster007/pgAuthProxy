@@ -3,12 +3,12 @@ package proxy
 import (
 	"errors"
 	"fmt"
+	"github.com/KnifeMaster007/pgAuthProxy/utils"
 	"github.com/jackc/pgproto3/v2"
 	"github.com/spf13/viper"
 	"io"
 	"math/rand"
 	"net"
-	"pgAuthProxy/utils"
 )
 
 type AuthMapper = func(props map[string]string, password string, salt [4]byte) (map[string]string, error)

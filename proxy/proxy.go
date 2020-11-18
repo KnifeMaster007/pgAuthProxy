@@ -1,11 +1,11 @@
 package proxy
 
 import (
+	"github.com/KnifeMaster007/pgAuthProxy/auth"
+	"github.com/KnifeMaster007/pgAuthProxy/utils"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"net"
-	"pgAuthProxy/auth"
-	"pgAuthProxy/utils"
 )
 
 // Start PostgreSQL authentication proxy server

@@ -3,12 +3,12 @@ package proxy
 import (
 	"encoding/binary"
 	"errors"
+	"github.com/KnifeMaster007/pgAuthProxy/auth"
+	"github.com/KnifeMaster007/pgAuthProxy/utils"
 	"github.com/jackc/pgproto3/v2"
 	log "github.com/sirupsen/logrus"
 	"io"
 	"net"
-	"pgAuthProxy/auth"
-	"pgAuthProxy/utils"
 	"strings"
 	"time"
 )
