@@ -98,6 +98,7 @@ func (b *ProxyBack) initiateBackendConnection(credential string) error {
 func pipeBackendPgMessages(source pgproto3.ChunkReader, dest io.Writer) error {
 	bw := utils.NewBufferedWriter(MaxTcpPayload, dest)
 	pipeRunning := true
+	startupComplete := false
 	var pipeError error
 	defer func() { pipeRunning = false }()
 
@@ -125,6 +126,21 @@ func pipeBackendPgMessages(source pgproto3.ChunkReader, dest io.Writer) error {
 		_, err = bw.Write(append(header, body...))
 		if err != nil {
 			return err
+		}
+		switch header[0] {
+		case 'S':
+			if !startupComplete {
+				break
+			}
+			fallthrough
+		case 'A', 'N', 'Z':
+			if header[0] == 'Z' {
+				startupComplete = true
+			}
+			_, err = bw.Flush()
+			if err != nil {
+				return err
+			}
 		}
 	}
 }
