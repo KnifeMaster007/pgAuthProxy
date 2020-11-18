@@ -10,6 +10,7 @@ import (
 	"pgAuthProxy/auth"
 	"pgAuthProxy/utils"
 	"strings"
+	"time"
 )
 
 type ProxyBack struct {
@@ -22,9 +23,13 @@ type ProxyBack struct {
 	protoChunkReader pgproto3.ChunkReader
 }
 
-var MissingRequiredTargetFields = errors.New("required target fields missing in target props")
-var BackendAuthenticationError = errors.New("backend authentication failed")
-var BackendInvalidMessage = errors.New("unexpected message received from backend")
+const MaxTcpPayload = 65535
+
+var (
+	MissingRequiredTargetFields = errors.New("required target fields missing in target props")
+	BackendAuthenticationError  = errors.New("backend authentication failed")
+	BackendInvalidMessage       = errors.New("unexpected message received from backend")
+)
 
 func NewProxyBackend(targetProps map[string]string, originProps map[string]string) (*ProxyBack, error) {
 	b := &ProxyBack{
@@ -90,6 +95,40 @@ func (b *ProxyBack) initiateBackendConnection(credential string) error {
 	}
 }
 
+func pipeBackendPgMessages(source pgproto3.ChunkReader, dest io.Writer) error {
+	bw := utils.NewBufferedWriter(MaxTcpPayload, dest)
+	pipeRunning := true
+	var pipeError error
+	defer func() { pipeRunning = false }()
+
+	go func() {
+		for pipeRunning {
+			time.Sleep(100 * time.Millisecond)
+			_, err := bw.Flush()
+			if err != nil {
+				pipeRunning = false
+				pipeError = err
+			}
+		}
+	}()
+
+	for {
+		if pipeError != nil {
+			return pipeError
+		}
+		header, err := source.Next(5)
+		if err != nil {
+			return err
+		}
+		l := int(binary.BigEndian.Uint32(header[1:])) - 4
+		body, _ := source.Next(l)
+		_, err = bw.Write(append(header, body...))
+		if err != nil {
+			return err
+		}
+	}
+}
+
 func pipePgMessages(source pgproto3.ChunkReader, dest io.Writer) error {
 	for {
 		header, err := source.Next(5)
@@ -110,7 +149,7 @@ func (b *ProxyBack) Run(frontConn net.Conn, frontChunkReader pgproto3.ChunkReade
 	err := make(chan error)
 	go func() {
 		log.Debug("bootstrapped backend -> frontend message pipe")
-		err <- pipePgMessages(b.protoChunkReader, frontConn)
+		err <- pipeBackendPgMessages(b.protoChunkReader, frontConn)
 	}()
 	go func() {
 		log.Debug("bootstrapped backend <- frontend message pipe")
