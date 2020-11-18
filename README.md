@@ -8,7 +8,7 @@ single entrypoint for various database servers with credentials mapping capabili
 ## Installation
 
 ```
-go get github.com/KnifeMaster007/pgAuthProxy
+go install github.com/KnifeMaster007/pgAuthProxy
 ```
 
 ## Core concepts
