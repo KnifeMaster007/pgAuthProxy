@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/KnifeMaster007/pgAuthProxy/utils"
 	gocmd "github.com/go-cmd/cmd"
+	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"io"
 	"strings"
@@ -48,6 +49,13 @@ func Exec(props map[string]string, password string, salt [4]byte) (map[string]st
 
 	select {
 	case status := <-statusChan:
+		log.WithFields(log.Fields{
+			"cmdExitCode": status.Exit,
+			"cmd":         args,
+			"cmdPropsIn":  props,
+			"cmdStdout":   status.Stdout,
+			"cmdStderr":   status.Stderr,
+		}).Debug("Authentication command finished execution")
 		if status.Error != nil {
 			return nil, status.Error
 		}
