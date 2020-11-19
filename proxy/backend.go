@@ -96,27 +96,11 @@ func (b *ProxyBack) initiateBackendConnection(credential string) error {
 }
 
 func pipeBackendPgMessages(source pgproto3.ChunkReader, dest io.Writer) error {
-	bw := utils.NewBufferedWriter(MaxTcpPayload, dest)
-	pipeRunning := true
+	bw := utils.NewBufferedWriter(MaxTcpPayload, dest, 300*time.Millisecond)
+	defer bw.Close()
 	startupComplete := false
-	var pipeError error
-	defer func() { pipeRunning = false }()
-
-	go func() {
-		for pipeRunning {
-			time.Sleep(100 * time.Millisecond)
-			_, err := bw.Flush()
-			if err != nil {
-				pipeRunning = false
-				pipeError = err
-			}
-		}
-	}()
 
 	for {
-		if pipeError != nil {
-			return pipeError
-		}
 		header, err := source.Next(5)
 		if err != nil {
 			return err
